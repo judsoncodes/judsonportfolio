@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store/useStore';
-import { Boid, Food, Vector2 } from '@/lib/physics/boids';
+import { Boid, Food, Vector2, SpatialHash } from '@/lib/physics/boids';
 import { Jellyfish, SeaTurtle, Anglerfish } from '@/lib/physics/creatures';
 import { audioEngine } from '@/lib/audio/AudioEngine';
 
@@ -14,13 +14,34 @@ function interpolateColor(color1: number[], color2: number[], factor: number) {
   return `rgb(${result[0]}, ${result[1]}, ${result[2]})`;
 }
 
+interface JumpingFish {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    angle: number;
+}
+
+interface Ripple {
+    x: number;
+    y: number;
+    radius: number;
+    opacity: number;
+}
+
+interface GlowTrail {
+    x: number;
+    y: number;
+    createdAt: number;
+}
+
 export default function CanvasEngine() {
-  const bgRef = useRef<HTMLCanvasElement>(null);
   const creaturesRef = useRef<HTMLCanvasElement>(null);
   const atmosphereRef = useRef<HTMLCanvasElement>(null);
 
   const pointerRef = useRef<Vector2>({ x: -1000, y: -1000 });
   const foodsRef = useRef<Food[]>([]);
+  const glowTrailsRef = useRef<GlowTrail[]>([]);
 
   const [reducedMotion, setReducedMotion] = useState(false);
 
@@ -35,11 +56,10 @@ export default function CanvasEngine() {
   useEffect(() => {
     if (reducedMotion) return;
 
-    const bgCtx = bgRef.current?.getContext('2d');
     const creaturesCtx = creaturesRef.current?.getContext('2d');
     const atmosphereCtx = atmosphereRef.current?.getContext('2d');
 
-    if (!bgCtx || !creaturesCtx || !atmosphereCtx) return;
+    if (!creaturesCtx || !atmosphereCtx) return;
 
     let time = 0;
     let animationFrameId: number;
@@ -55,7 +75,7 @@ export default function CanvasEngine() {
     let lastRecoveryCheck = performance.now();
 
     const resize = () => {
-      [bgRef, creaturesRef, atmosphereRef].forEach((ref) => {
+      [creaturesRef, atmosphereRef].forEach((ref) => {
         if (ref.current) {
           ref.current.width = window.innerWidth;
           ref.current.height = window.innerHeight;
@@ -67,15 +87,6 @@ export default function CanvasEngine() {
     resizeObserver.observe(document.body);
     resize();
 
-    const particles = Array.from({ length: 300 }).map(() => ({
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
-      radius: Math.random() * 1.5 + 0.5,
-      speedY: Math.random() * 0.5 + 0.1,
-      speedX: Math.random() * 0.2 - 0.1,
-      opacity: Math.random() * 0.5 + 0.2
-    }));
-
     const rays = Array.from({ length: 8 }).map(() => ({
       x: Math.random() * window.innerWidth,
       width: Math.random() * 100 + 50,
@@ -84,11 +95,15 @@ export default function CanvasEngine() {
       opacity: Math.random() * 0.15 + 0.05
     }));
 
-    const boids = Array.from({ length: 60 }).map(() => {
-      const b = new Boid(window.innerWidth + Math.random() * 500, Math.random() * window.innerHeight);
+    const boids = Array.from({ length: 500 }).map(() => {
+      const b = new Boid(window.innerWidth + Math.random() * 1000, Math.random() * window.innerHeight);
       b.vel.x = -2; // swim left on spawn
       return b;
     });
+    const boidHash = new SpatialHash(50);
+    const jumpingFishes: JumpingFish[] = [];
+    const ripples: Ripple[] = [];
+    
     const jellyfish = new Jellyfish(window.innerWidth * 0.8, window.innerHeight + 100);
     const seaTurtle = new SeaTurtle(window.innerWidth * 0.5, window.innerHeight * 0.5);
     const anglerfish = new Anglerfish(window.innerWidth * 0.3, window.innerHeight * 0.7);
@@ -154,8 +169,7 @@ export default function CanvasEngine() {
         }
       }
 
-      const activeBoidCount = isDegraded ? 25 : 60;
-      const activeParticleCount = isDegraded ? 80 : 300;
+      const activeBoidCount = isDegraded ? 150 : 500;
       const drawGodRays = !isDegraded;
       const updateTentacles = !isDegraded;
 
@@ -169,47 +183,72 @@ export default function CanvasEngine() {
 
       foodsRef.current = foodsRef.current.filter((f) => Date.now() - f.createdAt < 4000);
 
-      // 1. BG
-      bgCtx.clearRect(0, 0, w, h);
-      let topColor, bottomColor;
-      if (depthPercent <= 0.33) {
-        const p = depthPercent / 0.33;
-        topColor = interpolateColor([13, 59, 79], [7, 21, 37], p);
-        bottomColor = interpolateColor([7, 21, 37], [2, 8, 16], p);
-      } else if (depthPercent <= 0.66) {
-        const p = (depthPercent - 0.33) / 0.33;
-        topColor = interpolateColor([7, 21, 37], [2, 8, 16], p);
-        bottomColor = interpolateColor([2, 8, 16], [1, 4, 8], p);
-      } else {
-        const p = (depthPercent - 0.66) / 0.34;
-        topColor = interpolateColor([2, 8, 16], [1, 4, 8], p);
-        bottomColor = interpolateColor([1, 4, 8], [2, 8, 16], p);
-      }
-
-      const grad = bgCtx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, topColor);
-      grad.addColorStop(1, bottomColor);
-      bgCtx.fillStyle = grad;
-      bgCtx.fillRect(0, 0, w, h);
-
-      const surfaceY = 100 - (state.depth * 0.8);
-      if (surfaceY < h + 150) {
-        bgCtx.beginPath();
-        bgCtx.moveTo(0, h);
-        bgCtx.lineTo(0, surfaceY);
-        for (let x = 0; x <= w; x += 20) {
-          const y = surfaceY + Math.sin(x * 0.008 + time * 0.02) * 25 + Math.cos(x * 0.003 + time * 0.015) * 15;
-          bgCtx.lineTo(x, y);
-        }
-        bgCtx.lineTo(w, h);
-        bgCtx.closePath();
-        bgCtx.fillStyle = 'rgba(0, 229, 255, 0.2)';
-        bgCtx.fill();
-      }
-
       // 2. CREATURES
       creaturesCtx.clearRect(0, 0, w, h);
       
+      const surfaceY = Math.max(0, h * 0.2 - lastScrollY * 0.8);
+
+      // Spawn rare jumping fish only when near the surface
+      if (depthPercent < 0.1 && Math.random() < 0.002 && jumpingFishes.length < 1) {
+          if (surfaceY > 0 && surfaceY < h) {
+              jumpingFishes.push({
+                  x: w * 0.2 + Math.random() * (w * 0.6), // Spawn mostly in the middle 60%
+                  y: surfaceY,
+                  vx: (Math.random() - 0.5) * 3.0,
+                  vy: -(Math.random() * 2.0 + 5.0),
+                  angle: 0
+              });
+          }
+      }
+
+      // Update & Draw Ripples
+      for (let i = ripples.length - 1; i >= 0; i--) {
+          const r = ripples[i];
+          r.radius += 0.8;
+          r.opacity -= 0.015;
+          if (r.opacity <= 0) {
+              ripples.splice(i, 1);
+          } else {
+              creaturesCtx.beginPath();
+              creaturesCtx.ellipse(r.x, surfaceY, r.radius * 2, r.radius * 0.5, 0, 0, Math.PI * 2);
+              creaturesCtx.strokeStyle = `rgba(0, 229, 255, ${r.opacity * 0.6})`;
+              creaturesCtx.lineWidth = 1.5;
+              creaturesCtx.stroke();
+          }
+      }
+
+      // Update & Draw Jumping Fishes
+      for (let i = jumpingFishes.length - 1; i >= 0; i--) {
+          const f = jumpingFishes[i];
+          f.vy += 0.15; // smooth gravity
+          f.x += f.vx;
+          f.y += f.vy;
+          f.angle = Math.atan2(f.vy, f.vx);
+          
+          if (f.vy > 0 && f.y >= surfaceY) {
+              // Hits the water
+              if (audioEngine && Math.random() < 0.5) audioEngine.playBubble(); // Optional subtle sound
+              ripples.push({ x: f.x, y: surfaceY, radius: 2, opacity: 1.0 });
+              jumpingFishes.splice(i, 1);
+          } else {
+              // Draw minimalistic elegant fish shape
+              creaturesCtx.save();
+              creaturesCtx.translate(f.x, f.y);
+              creaturesCtx.rotate(f.angle);
+              
+              creaturesCtx.beginPath();
+              creaturesCtx.moveTo(8, 0);
+              creaturesCtx.lineTo(-6, 2);
+              creaturesCtx.lineTo(-8, 0);
+              creaturesCtx.lineTo(-6, -2);
+              creaturesCtx.closePath();
+              
+              creaturesCtx.fillStyle = 'rgba(180, 240, 255, 0.9)';
+              creaturesCtx.fill();
+              creaturesCtx.restore();
+          }
+      }
+
       foodsRef.current.forEach((food) => {
         food.y += 0.5;
         creaturesCtx.beginPath();
@@ -218,11 +257,33 @@ export default function CanvasEngine() {
         creaturesCtx.fill();
       });
 
-      const boidOpacity = depthPercent > 0.66 ? 0 : Math.max(1 - (depthPercent / 0.66), 0.1);
+      // Boids fade in only AFTER the surface (0.05 to 0.15) and fade out before midnight (0.4 to 0.66)
+      let boidOpacity = 0;
+      if (depthPercent > 0.05 && depthPercent <= 0.66) {
+         if (depthPercent < 0.15) {
+            boidOpacity = (depthPercent - 0.05) / 0.1;
+         } else if (depthPercent > 0.4) {
+            boidOpacity = 1.0 - ((depthPercent - 0.4) / 0.26);
+         } else {
+            boidOpacity = 1.0;
+         }
+      }
+
       if (boidOpacity > 0) {
+        // Spatial Hashing Pass for high-performance neighbor lookups
+        boidHash.clear();
+        for (let i = 0; i < activeBoidCount; i++) {
+          boidHash.insert(boids[i]);
+        }
+
         for (let i = 0; i < activeBoidCount; i++) {
           const boid = boids[i];
-          boid.update(boids.slice(0, activeBoidCount), pointerRef.current, foodsRef.current, w, h, depthPercent);
+          boid.update(boidHash, pointerRef.current, foodsRef.current, w, h, depthPercent);
+          
+          // Bioluminescent pulse trail emission
+          if (!isDegraded && Math.sin(time * 0.1 + i) > 0.8) {
+              glowTrailsRef.current.push({ x: boid.pos.x, y: boid.pos.y, createdAt: now });
+          }
           
           foodsRef.current = foodsRef.current.filter((f) => {
             const d = Math.sqrt((boid.pos.x - f.x)**2 + (boid.pos.y - f.y)**2);
@@ -262,23 +323,34 @@ export default function CanvasEngine() {
       // 3. ATMOSPHERE
       atmosphereCtx.clearRect(0, 0, w, h);
 
-      const snowOpacityMult = depthPercent >= 0.66 ? 1.5 : Math.max(1 - (Math.pow(depthPercent, 2) * 1.5), 0.2);
-      const extraSpeed = scrollVelocity * 0.08;
-
-      for (let i = 0; i < activeParticleCount; i++) {
-        const p = particles[i];
-        p.y += p.speedY + extraSpeed;
-        p.x += p.speedX + Math.sin(time * 0.01 + p.y * 0.01) * 0.5;
-
-        if (p.y > h) p.y = 0;
-        if (p.x > w) p.x = 0;
-        if (p.x < 0) p.x = w;
-
-        atmosphereCtx.beginPath();
-        atmosphereCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        atmosphereCtx.fillStyle = `rgba(255, 255, 255, ${Math.min(p.opacity * snowOpacityMult, 1)})`;
-        atmosphereCtx.fill();
+      // Bioluminescent Glow Trails
+      if (!isDegraded) {
+          glowTrailsRef.current = glowTrailsRef.current.filter(t => now - t.createdAt < 400);
+          glowTrailsRef.current.forEach(t => {
+              const lifeRatio = 1.0 - ((now - t.createdAt) / 400.0);
+              const radius = 10 + (1.0 - lifeRatio) * 15; // Expands as it fades
+              
+              // Gaussian blur approximation via radial gradient
+              const grad = atmosphereCtx.createRadialGradient(t.x, t.y, 0, t.x, t.y, radius);
+              grad.addColorStop(0, `rgba(0, 255, 200, ${lifeRatio * 0.5})`);
+              grad.addColorStop(0.4, `rgba(0, 229, 255, ${lifeRatio * 0.2})`);
+              grad.addColorStop(1, 'rgba(0, 255, 200, 0)');
+              
+              atmosphereCtx.beginPath();
+              atmosphereCtx.arc(t.x, t.y, radius, 0, Math.PI * 2);
+              atmosphereCtx.fillStyle = grad;
+              atmosphereCtx.fill();
+          });
       }
+
+      // Marine snow fades in as you go deeper. Surface is clean and minimal.
+      let snowOpacityMult = 0.0;
+      if (depthPercent > 0.05) {
+          snowOpacityMult = Math.min((depthPercent - 0.05) / 0.1, 1.0);
+      }
+      if (depthPercent >= 0.66) snowOpacityMult = 1.5;
+
+      const extraSpeed = scrollVelocity * 0.08;
 
       if (drawGodRays && depthPercent < 0.6) {
         const rayFade = Math.max(1 - (depthPercent / 0.4), 0);
@@ -287,17 +359,20 @@ export default function CanvasEngine() {
             const osc = Math.sin(time * ray.speed + i);
             const currentOpacity = ray.opacity * rayFade * (0.8 + osc * 0.2);
 
+            // Calculate exact surface level to prevent drawing in the sky
+            const surfaceY = Math.max(0, h * 0.2 - lastScrollY * 0.8);
+
             atmosphereCtx.beginPath();
             const xTop = ray.x + osc * 50;
             const xBottom = xTop + Math.tan(ray.angle) * h;
             
-            atmosphereCtx.moveTo(xTop, 0);
-            atmosphereCtx.lineTo(xTop + ray.width, 0);
+            atmosphereCtx.moveTo(xTop, surfaceY);
+            atmosphereCtx.lineTo(xTop + ray.width, surfaceY);
             atmosphereCtx.lineTo(xBottom + ray.width * 1.5, h);
             atmosphereCtx.lineTo(xBottom, h);
             atmosphereCtx.closePath();
 
-            const rayGrad = atmosphereCtx.createLinearGradient(xTop, 0, xBottom, h);
+            const rayGrad = atmosphereCtx.createLinearGradient(xTop, surfaceY, xBottom, h);
             rayGrad.addColorStop(0, `rgba(200, 240, 255, ${currentOpacity})`);
             rayGrad.addColorStop(1, `rgba(200, 240, 255, 0)`);
             
@@ -328,7 +403,6 @@ export default function CanvasEngine() {
 
   return (
     <>
-      <canvas ref={bgRef} className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }} aria-hidden="true" role="presentation" />
       <canvas ref={creaturesRef} className="fixed inset-0 pointer-events-none" style={{ zIndex: 1 }} aria-hidden="true" role="presentation" />
       <canvas ref={atmosphereRef} className="fixed inset-0 pointer-events-none mix-blend-screen" style={{ zIndex: 2 }} aria-hidden="true" role="presentation" />
     </>

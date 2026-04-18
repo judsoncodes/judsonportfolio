@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
+import { useStore } from '@/lib/store/useStore';
 
 interface OceanWaveProps {
   onComplete: () => void;
@@ -21,6 +22,7 @@ const fragmentShaderSource = `
   uniform float u_time;
   uniform float u_progress;
   uniform float u_direction;
+  uniform float u_depth_ratio;
 
   // Ashima 3D Simplex Noise
   vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
@@ -146,27 +148,82 @@ const fragmentShaderSource = `
          gl_FragColor = vec4(0.0);
      } else {
          // Deep, pleasing ocean colors
-         vec3 deepOcean = vec3(0.0, 0.05, 0.15); // Almost black-blue
-         vec3 midWater = vec3(0.0, 0.2, 0.4);
-         vec3 crestCyan = vec3(0.0, 0.7, 0.9);
+         vec3 deepOcean = vec3(0.0, 0.05, 0.15); // Cold deep water
+         vec3 midWater = vec3(0.0, 0.2, 0.4);   // Transition
+         vec3 crestCyan = vec3(0.0, 0.7, 0.9);  // Warm surface water
          vec3 foamWhite = vec3(0.9, 0.95, 1.0);
 
-         // Color based STRICTLY on distance from the LEADING edge
-         // This ensures there is only ONE crest, preventing the "two rounds" look
-         float submergedAmount = smoothstep(0.0, 0.2, distToLead);
-         vec3 color = mix(crestCyan, midWater, submergedAmount);
-         color = mix(color, deepOcean, smoothstep(0.2, 0.8, distToLead));
+         // --- Thermocline Boundary (SDF-based Heat Shimmer) ---
+         float thermoclineTarget = 0.25;
+         float shimmerNoise = snoise(vec3(aspectUv * 12.0, u_time * 1.5)) * 0.015;
+         float thermoclineSDF = abs(distToLead - thermoclineTarget + shimmerNoise);
+         float thermoclineGlow = smoothstep(0.05, 0.0, thermoclineSDF);
+         
+         // Visual separation of Warm vs Cold layers
+         float layerTransition = smoothstep(thermoclineTarget - 0.05, thermoclineTarget + 0.05, distToLead);
+         vec3 baseColor = mix(crestCyan, midWater, smoothstep(0.0, thermoclineTarget, distToLead));
+         if (distToLead > thermoclineTarget) {
+            baseColor = mix(midWater, deepOcean, smoothstep(thermoclineTarget, 0.8, distToLead));
+         }
+         
+         vec3 color = baseColor;
+         // Add the shimmering thermocline haze
+         color += vec3(0.0, 0.4, 0.6) * thermoclineGlow * 0.4;
 
-         // Gentle caustics
-         float caustics = snoise(vec3(aspectUv * 6.0 + vec2(u_time * 0.2, u_time * 0.4), u_time));
-         caustics = pow(smoothstep(0.4, 0.9, caustics), 2.0);
-         color += crestCyan * caustics * 0.2;
+         // Real-time Subsurface Chromatic Aberration
+         // Distort UVs based on thermocline shimmer for extra realism
+         vec2 shimmerOffset = vec2(shimmerNoise) * thermoclineGlow;
+         vec2 finalAspectUv = aspectUv + shimmerOffset;
 
-         // Volumetric Light Rays (God Rays)
-         float rays = snoise(vec3(aspectUv.x * 2.0 + u_time * 0.1, aspectUv.y * 1.0 - u_time * 0.2, u_time * 0.3));
-         color += vec3(0.1, 0.5, 0.8) * max(0.0, rays) * 0.2;
+         // The split intensifies based on scroll depth (u_depth_ratio) and depth into the wave (distToLead)
+         float aberrationStrength = mix(0.002, 0.03, u_depth_ratio) * smoothstep(0.0, 0.6, distToLead);
+         vec2 offsetCyan = vec2(aberrationStrength, -aberrationStrength * 0.5);
+         vec2 offsetViolet = vec2(-aberrationStrength, aberrationStrength * 0.5);
+         
+         // 1. Cyan Shift (Evaluated at finalAspectUv + offsetCyan)
+         float c_caustics = snoise(vec3((finalAspectUv + offsetCyan) * 6.0 + vec2(u_time * 0.2, u_time * 0.4), u_time));
+         c_caustics = pow(smoothstep(0.4, 0.9, c_caustics), 2.0);
+         float c_rays = snoise(vec3((finalAspectUv + offsetCyan).x * 2.0 + u_time * 0.1, (finalAspectUv + offsetCyan).y * 1.0 - u_time * 0.2, u_time * 0.3));
+         
+         // 2. Violet Shift (Evaluated at finalAspectUv + offsetViolet)
+         float v_caustics = snoise(vec3((finalAspectUv + offsetViolet) * 6.0 + vec2(u_time * 0.2, u_time * 0.4), u_time));
+         v_caustics = pow(smoothstep(0.4, 0.9, v_caustics), 2.0);
+         float v_rays = snoise(vec3((finalAspectUv + offsetViolet).x * 2.0 + u_time * 0.1, (finalAspectUv + offsetViolet).y * 1.0 - u_time * 0.2, u_time * 0.3));
+         
+         // 3. Center/Base Evaluation
+         float m_caustics = snoise(vec3(finalAspectUv * 6.0 + vec2(u_time * 0.2, u_time * 0.4), u_time));
+         m_caustics = pow(smoothstep(0.4, 0.9, m_caustics), 2.0);
+         float m_rays = snoise(vec3(finalAspectUv.x * 2.0 + u_time * 0.1, finalAspectUv.y * 1.0 - u_time * 0.2, u_time * 0.3));
 
-         // Smooth leading-edge foam
+         // Add Chromatic Lights
+         vec3 cyanLight = vec3(0.0, 0.85, 1.0);
+         vec3 violetLight = vec3(0.5, 0.0, 1.0);
+         
+         // Caustics combination
+         color += cyanLight * c_caustics * 0.25;
+         color += violetLight * v_caustics * 0.25;
+         color += crestCyan * m_caustics * 0.1; // Base center core
+         
+         // Rays combination
+         color += cyanLight * max(0.0, c_rays) * 0.15;
+         color += violetLight * max(0.0, v_rays) * 0.15;
+         color += vec3(0.1, 0.5, 0.8) * max(0.0, m_rays) * 0.1;
+         
+         // --- Rayleigh-Mie Exponential Depth Fog ---
+         // Light absorption coefficients: Red is absorbed very fast, Green medium, Blue slow.
+         vec3 absorption = vec3(5.5, 2.0, 0.5); 
+         
+         // Virtual depth combines physical distance into the wave and the global scroll depth
+         float virtualDepth = distToLead * 2.5 + (u_depth_ratio * 1.5);
+         vec3 transmittance = exp(-absorption * virtualDepth);
+         
+         // Deepest, darkest ocean color (Abyss)
+         vec3 abyssColor = vec3(0.0, 0.01, 0.04);
+         
+         // Apply physical scattering: colors lose saturation and shift to deep blue
+         color = mix(abyssColor, color, transmittance);
+
+         // Smooth leading-edge foam (Rendered ON TOP of the fog, since it's exactly at the surface)
          float foamNoise = snoise(vec3(aspectUv * 8.0, u_time * 2.0));
          float foamThickness = 0.04 + foamNoise * 0.03;
          float foamMask = smoothstep(foamThickness, foamThickness * 0.5, distToLead);
@@ -230,6 +287,7 @@ export default function OceanWave({ onComplete, duration = 4000, direction = 'up
     const uTime = gl.getUniformLocation(program, "u_time");
     const uProgress = gl.getUniformLocation(program, "u_progress");
     const uDirection = gl.getUniformLocation(program, "u_direction");
+    const uDepthRatio = gl.getUniformLocation(program, "u_depth_ratio");
 
     const resize = () => {
       const width = window.innerWidth;
@@ -298,6 +356,10 @@ export default function OceanWave({ onComplete, duration = 4000, direction = 'up
     const render = (time: number) => {
       const elapsed = time - startTime;
       const progress = Math.min(elapsed / duration, 1);
+      
+      const maxDepth = 4000;
+      const currentDepth = useStore.getState().depth;
+      const depthRatio = Math.min(currentDepth / maxDepth, 1);
 
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -305,6 +367,7 @@ export default function OceanWave({ onComplete, duration = 4000, direction = 'up
       gl.uniform1f(uTime, elapsed / 1000.0);
       gl.uniform1f(uProgress, progress);
       gl.uniform1f(uDirection, direction === 'up' ? 1.0 : -1.0);
+      gl.uniform1f(uDepthRatio, depthRatio);
       
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 

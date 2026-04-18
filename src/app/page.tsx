@@ -1,13 +1,16 @@
 'use client';
 
 import CanvasEngine from "@/components/canvas/CanvasEngine";
+import SurfaceCanvas from "@/components/canvas/SurfaceCanvas";
+import MarineSnowWebGL from "@/components/canvas/MarineSnowWebGL";
+import BubbleShader from "@/components/canvas/BubbleShader";
 import PressureVignette from "@/components/ui/PressureVignette";
 import DepthGauge from "@/components/ui/DepthGauge";
 import GlassCard from "@/components/ui/GlassCard";
 import SonarSkills from "@/components/ui/SonarSkills";
 import SoundToggle from "@/components/ui/SoundToggle";
 import { useStore } from "@/lib/store/useStore";
-import { motion } from "framer-motion";
+import { motion, Variants } from "framer-motion";
 import { ExternalLink, Mail, Phone, MapPin, Download } from 'lucide-react';
 
 const GithubIcon = ({ size = 24, className = "" }) => (
@@ -34,13 +37,13 @@ function EcoBadge() {
   );
 }
 
-const sectionVariants = {
+const sectionVariants: Variants = {
   hidden: { opacity: 0, y: 50 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
 };
 
 // Legendary hero animations
-const heroContainerVariants = {
+const heroContainerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -51,7 +54,7 @@ const heroContainerVariants = {
   }
 };
 
-const glitchTitleVariants = {
+const glitchTitleVariants: Variants = {
   hidden: { opacity: 0, x: -100, skewX: 30, filter: "blur(20px)" },
   visible: {
     opacity: 1, 
@@ -67,7 +70,7 @@ const glitchTitleVariants = {
   }
 };
 
-const popItemVariants = {
+const popItemVariants: Variants = {
   hidden: { opacity: 0, y: 40, scale: 0.8, filter: "blur(10px)" },
   visible: { 
     opacity: 1, 
@@ -86,7 +89,10 @@ export default function Home() {
 
   return (
     <main className="relative w-full text-white overflow-hidden font-sans">
+      <SurfaceCanvas />
       <CanvasEngine />
+      <MarineSnowWebGL />
+      <BubbleShader />
       <PressureVignette />
       <DepthGauge />
       <SoundToggle />

@@ -1,6 +1,49 @@
 export interface Vector2 { x: number; y: number; }
 export interface Food { x: number; y: number; createdAt: number; }
 
+export class SpatialHash {
+  grid: Map<string, Boid[]> = new Map();
+  cellSize: number;
+
+  constructor(cellSize: number = 50) {
+    this.cellSize = cellSize;
+  }
+
+  clear() {
+    this.grid.clear();
+  }
+
+  insert(boid: Boid) {
+    const key = this.getKey(boid.pos);
+    if (!this.grid.has(key)) this.grid.set(key, []);
+    this.grid.get(key)!.push(boid);
+  }
+
+  getKey(pos: Vector2) {
+    const gx = Math.floor(pos.x / this.cellSize);
+    const gy = Math.floor(pos.y / this.cellSize);
+    return `${gx},${gy}`;
+  }
+
+  getNeighbors(pos: Vector2, radius: number): Boid[] {
+    const neighbors: Boid[] = [];
+    const gx = Math.floor(pos.x / this.cellSize);
+    const gy = Math.floor(pos.y / this.cellSize);
+    const range = Math.ceil(radius / this.cellSize);
+
+    for (let x = gx - range; x <= gx + range; x++) {
+      for (let y = gy - range; y <= gy + range; y++) {
+        const key = `${x},${y}`;
+        const cell = this.grid.get(key);
+        if (cell) {
+          neighbors.push(...cell);
+        }
+      }
+    }
+    return neighbors;
+  }
+}
+
 export class Boid {
   pos: Vector2;
   vel: Vector2;
@@ -14,17 +57,20 @@ export class Boid {
     const angle = Math.random() * Math.PI * 2;
     this.vel = { x: Math.cos(angle), y: Math.sin(angle) };
     this.acc = { x: 0, y: 0 };
-    this.size = Math.random() * 4 + 4; // 4 to 8px
+    this.size = Math.random() * 3 + 3; // Slightly smaller for 500+ count
     this.maxSpeed = 2;
     this.maxForce = 0.05;
   }
 
-  update(boids: Boid[], cursor: Vector2, foods: Food[], width: number, height: number, depthPercent: number) {
+  update(hash: SpatialHash, cursor: Vector2, foods: Food[], width: number, height: number, depthPercent: number) {
     if (depthPercent > 0.6) return; // Inactive below 60%
 
-    const sep = this.separate(boids);
-    const ali = this.align(boids);
-    const coh = this.cohere(boids);
+    // Max neighbor radius is 50
+    const neighbors = hash.getNeighbors(this.pos, 50);
+
+    const sep = this.separate(neighbors);
+    const ali = this.align(neighbors);
+    const coh = this.cohere(neighbors);
 
     sep.x *= 1.5; sep.y *= 1.5;
     ali.x *= 1.0; ali.y *= 1.0;
@@ -40,7 +86,7 @@ export class Boid {
       let nearestFood: Food | null = null;
       for (const f of foods) {
         const d = dist(this.pos, f);
-        if (d < 200 && d < nearestDist) {
+        if (d < 150 && d < nearestDist) {
           nearestDist = d;
           nearestFood = f;
         }
@@ -55,15 +101,15 @@ export class Boid {
     // Cursor fear
     let fearForce = { x: 0, y: 0 };
     const dCursor = dist(this.pos, cursor);
-    if (dCursor < 120) {
-      forceScale = 2.5; // speed burst
+    if (dCursor < 100) {
+      forceScale = 2.0; 
       const diff = { x: this.pos.x - cursor.x, y: this.pos.y - cursor.y };
       const mag = Math.sqrt(diff.x * diff.x + diff.y * diff.y);
       if (mag > 0) {
-        fearForce.x = (diff.x / mag) * this.maxForce * 10;
-        fearForce.y = (diff.y / mag) * this.maxForce * 10;
+        fearForce.x = (diff.x / mag) * this.maxForce * 8;
+        fearForce.y = (diff.y / mag) * this.maxForce * 8;
       }
-      overridesFlocking = true; // overrides feeding too
+      overridesFlocking = true;
     }
 
     if (overridesFlocking) {
@@ -77,7 +123,6 @@ export class Boid {
     this.vel.x += this.acc.x;
     this.vel.y += this.acc.y;
     
-    // Limit speed
     const currentMaxSpeed = this.maxSpeed * forceScale;
     const speed = Math.sqrt(this.vel.x * this.vel.x + this.vel.y * this.vel.y);
     if (speed > currentMaxSpeed) {
@@ -108,11 +153,11 @@ export class Boid {
     return this.limit(steer, this.maxForce);
   }
 
-  separate(boids: Boid[]) {
-    const desiredSeparation = 30.0;
+  separate(neighbors: Boid[]) {
+    const desiredSeparation = 25.0;
     let steer = { x: 0, y: 0 };
     let count = 0;
-    for (const other of boids) {
+    for (const other of neighbors) {
       const d = dist(this.pos, other.pos);
       if ((d > 0) && (d < desiredSeparation)) {
         let diff = { x: this.pos.x - other.pos.x, y: this.pos.y - other.pos.y };
@@ -134,11 +179,11 @@ export class Boid {
     return steer;
   }
 
-  align(boids: Boid[]) {
+  align(neighbors: Boid[]) {
     const neighborDist = 50;
     let sum = { x: 0, y: 0 };
     let count = 0;
-    for (const other of boids) {
+    for (const other of neighbors) {
       const d = dist(this.pos, other.pos);
       if ((d > 0) && (d < neighborDist)) {
         sum.x += other.vel.x; sum.y += other.vel.y;
@@ -158,11 +203,11 @@ export class Boid {
     return { x: 0, y: 0 };
   }
 
-  cohere(boids: Boid[]) {
+  cohere(neighbors: Boid[]) {
     const neighborDist = 50;
     let sum = { x: 0, y: 0 };
     let count = 0;
-    for (const other of boids) {
+    for (const other of neighbors) {
       const d = dist(this.pos, other.pos);
       if ((d > 0) && (d < neighborDist)) {
         sum.x += other.pos.x; sum.y += other.pos.y;
