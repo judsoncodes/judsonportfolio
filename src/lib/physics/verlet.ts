@@ -11,6 +11,17 @@ export class VerletNode {
     this.oldY = y;
   }
 
+  applyDrag(viscosity: number) {
+    const vx = this.x - this.oldX;
+    const vy = this.y - this.oldY;
+    
+    // Stokes' Law: Force is proportional to velocity
+    // At slow speeds, force is negligible (weightless)
+    // At high speeds, force is significant (viscous)
+    this.x -= vx * viscosity;
+    this.y -= vy * viscosity;
+  }
+
   update(gravity: number, friction: number = 0.99) {
     const vx = (this.x - this.oldX) * friction;
     const vy = (this.y - this.oldY) * friction;

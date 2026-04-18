@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store/useStore';
 import { Boid, Food, Vector2, SpatialHash } from '@/lib/physics/boids';
-import { Jellyfish, SeaTurtle, Anglerfish } from '@/lib/physics/creatures';
+import { Jellyfish, SeaTurtle, Anglerfish, Osedax, Whale, Octopus } from '@/lib/physics/creatures';
 import { audioEngine } from '@/lib/audio/AudioEngine';
 
 function interpolateColor(color1: number[], color2: number[], factor: number) {
@@ -13,6 +13,67 @@ function interpolateColor(color1: number[], color2: number[], factor: number) {
   }
   return `rgb(${result[0]}, ${result[1]}, ${result[2]})`;
 }
+
+// 2D Wave Equation Simulation for Pressure Ripples
+class WaveGrid {
+  width: number;
+  height: number;
+  buffer1: Float32Array;
+  buffer2: Float32Array;
+  cols: number;
+  rows: number;
+  res: number = 25; // 25px per cell
+
+  constructor(w: number, h: number) {
+    this.width = w;
+    this.height = h;
+    this.cols = Math.ceil(w / this.res) + 2;
+    this.rows = Math.ceil(h / this.res) + 2;
+    this.buffer1 = new Float32Array(this.cols * this.rows);
+    this.buffer2 = new Float32Array(this.cols * this.rows);
+  }
+
+  update() {
+    for (let i = 1; i < this.cols - 1; i++) {
+      for (let j = 1; j < this.rows - 1; j++) {
+        const idx = i + j * this.cols;
+        this.buffer2[idx] = (
+          this.buffer1[idx - 1] +
+          this.buffer1[idx + 1] +
+          this.buffer1[idx - this.cols] +
+          this.buffer1[idx + this.cols]
+        ) / 2 - this.buffer2[idx];
+        this.buffer2[idx] *= 0.98; // damping
+      }
+    }
+    // Swap
+    const temp = this.buffer1;
+    this.buffer1 = this.buffer2;
+    this.buffer2 = temp;
+  }
+
+  splash(x: number, y: number, strength: number) {
+    const gx = Math.floor(x / this.res);
+    const gy = Math.floor(y / this.res);
+    if (gx > 0 && gx < this.cols - 1 && gy > 0 && gy < this.rows - 1) {
+      this.buffer1[gx + gy * this.cols] = strength;
+    }
+  }
+
+  getDisplacement(x: number, y: number): { dx: number, dy: number } {
+    const gx = Math.floor(x / this.res);
+    const gy = Math.floor(y / this.res);
+    if (gx > 1 && gx < this.cols - 2 && gy > 1 && gy < this.rows - 2) {
+      const idx = gx + gy * this.cols;
+      // Gradient of the wave field
+      const dx = (this.buffer1[idx + 1] - this.buffer1[idx - 1]) * 2.0;
+      const dy = (this.buffer1[idx + this.cols] - this.buffer1[idx - this.cols]) * 2.0;
+      return { dx, dy };
+    }
+    return { dx: 0, dy: 0 };
+  }
+}
+
 
 interface JumpingFish {
     x: number;
@@ -33,6 +94,30 @@ interface GlowTrail {
     x: number;
     y: number;
     createdAt: number;
+}
+
+interface InkParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  life: number;
+}
+
+interface VentParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  life: number;
+  age: number;
+}
+
+interface Vent {
+  x: number;
+  y: number;
 }
 
 export default function CanvasEngine() {
@@ -87,12 +172,23 @@ export default function CanvasEngine() {
     resizeObserver.observe(document.body);
     resize();
 
+    const waveGrid = new WaveGrid(window.innerWidth, window.innerHeight);
+
     const rays = Array.from({ length: 8 }).map(() => ({
       x: Math.random() * window.innerWidth,
       width: Math.random() * 100 + 50,
       angle: Math.PI / 6 + (Math.random() * 0.1 - 0.05),
       speed: Math.random() * 0.01 + 0.005,
       opacity: Math.random() * 0.15 + 0.05
+    }));
+
+    const particles = Array.from({ length: 400 }).map(() => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      radius: Math.random() * 1.4 + 0.4,   // Prompt 4: 0.4 - 1.8px
+      speedY: Math.random() * 0.5 + 0.1,
+      drift: Math.random() * 0.16 - 0.08, // Prompt 5: -0.08 to +0.08 px/frame
+      opacity: Math.random() * 0.4 + 0.1  // Prompt 4: 0.1 - 0.5
     }));
 
     const boids = Array.from({ length: 500 }).map(() => {
@@ -107,22 +203,68 @@ export default function CanvasEngine() {
     const jellyfish = new Jellyfish(window.innerWidth * 0.8, window.innerHeight + 100);
     const seaTurtle = new SeaTurtle(window.innerWidth * 0.5, window.innerHeight * 0.5);
     const anglerfish = new Anglerfish(window.innerWidth * 0.3, window.innerHeight * 0.7);
+    const worms = Array.from({ length: 15 }).map((_, i) => {
+      return new Osedax(window.innerWidth * (0.05 + i * 0.07) + (Math.random() - 0.5) * 50, window.innerHeight + 10);
+    });
+    const whale = new Whale();
+    const octopus = new Octopus(window.innerWidth * 0.7, window.innerHeight * 0.4);
+    const inkParticles: InkParticle[] = [];
+    const vents: Vent[] = [
+        { x: window.innerWidth * 0.2, y: window.innerHeight },
+        { x: window.innerWidth * 0.5, y: window.innerHeight },
+        { x: window.innerWidth * 0.8, y: window.innerHeight }
+    ];
+    const ventParticles: VentParticle[] = [];
+    let baitBallCooldown = 0;
+    let baitBallTarget: Vector2 | null = null;
 
     const handlePointerMove = (e: MouseEvent) => {
+      const oldX = pointerRef.current.x;
+      const oldY = pointerRef.current.y;
       pointerRef.current = { x: e.clientX, y: e.clientY };
+      
+      // Inject pressure into wave grid on movement
+      const dist = Math.sqrt((e.clientX - oldX)**2 + (e.clientY - oldY)**2);
+      if (dist > 5) {
+        waveGrid.splash(e.clientX, e.clientY, Math.min(dist * 0.5, 50));
+      }
     };
 
     const handleClick = (e: MouseEvent) => {
-      if (audioEngine) audioEngine.playBubble();
+      const dx = e.clientX - octopus.x;
+      const dy = e.clientY - octopus.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Trigger ink cloud if click is near octopus
+      if (dist < 150) {
+        for (let i = 0; i < 40; i++) {
+          inkParticles.push({
+            x: octopus.x,
+            y: octopus.y,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            radius: Math.random() * 20 + 10,
+            life: 1.0
+          });
+        }
+        if (audioEngine) audioEngine.playBubble();
+      }
 
       const state = useStore.getState();
       if (state.depthPercent >= 0.66) {
-        const dx = e.clientX - anglerfish.x;
-        const dy = e.clientY - anglerfish.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 150) {
+        const adx = e.clientX - anglerfish.x;
+        const ady = e.clientY - anglerfish.y;
+        if (Math.sqrt(adx * adx + ady * ady) < 150) {
           anglerfish.lunge();
         }
       }
+      
+      foodsRef.current.push({
+        x: e.clientX,
+        y: e.clientY,
+        createdAt: Date.now()
+      });
+      if (audioEngine) audioEngine.playBubble();
     };
 
     const handleDoubleClick = (e: MouseEvent) => {
@@ -270,6 +412,20 @@ export default function CanvasEngine() {
       }
 
       if (boidOpacity > 0) {
+        // Update pressure waves
+        waveGrid.update();
+        
+        // Bait Ball Logic (Defensive Sphere against Anglerfish)
+        const dToAngler = Math.sqrt((anglerfish.x - w/2)**2 + (anglerfish.y - h/2)**2);
+        if (dToAngler < 400 && baitBallCooldown <= 0 && depthPercent > 0.4) {
+          baitBallTarget = { x: w/2, y: h/2 };
+          baitBallCooldown = 400; // ~6.5 seconds
+        }
+        if (baitBallCooldown > 0) {
+          baitBallCooldown--;
+          if (baitBallCooldown < 50) baitBallTarget = null; // Begin dispersing
+        }
+
         // Spatial Hashing Pass for high-performance neighbor lookups
         boidHash.clear();
         for (let i = 0; i < activeBoidCount; i++) {
@@ -278,7 +434,13 @@ export default function CanvasEngine() {
 
         for (let i = 0; i < activeBoidCount; i++) {
           const boid = boids[i];
-          boid.update(boidHash, pointerRef.current, foodsRef.current, w, h, depthPercent);
+          
+          // Apply pressure wave displacement to boids
+          const wave = waveGrid.getDisplacement(boid.pos.x, boid.pos.y);
+          boid.vel.x += wave.dx;
+          boid.vel.y += wave.dy;
+
+          boid.update(boidHash, pointerRef.current, foodsRef.current, w, h, depthPercent, baitBallTarget);
           
           // Bioluminescent pulse trail emission
           if (!isDegraded && Math.sin(time * 0.1 + i) > 0.8) {
@@ -311,14 +473,98 @@ export default function CanvasEngine() {
       if (isTwilight) {
         // If degraded, update physics with active=false (skip verlet) but still draw the static ones
         jellyfish.update(pointerRef.current, updateTentacles);
+        
+        // Apply pressure wave to jellyfish tentacles
+        jellyfish.tentacles.forEach(t => {
+            t.nodes.forEach(n => {
+                const wave = waveGrid.getDisplacement(n.x, n.y);
+                n.x += wave.dx * 0.5;
+                n.y += wave.dy * 0.5;
+            });
+        });
+
         jellyfish.draw(creaturesCtx, true);
         seaTurtle.draw(creaturesCtx, true);
       } else {
         jellyfish.update(pointerRef.current, false);
       }
 
+      const isTwilightZone = depthPercent >= 0.25 && depthPercent < 0.66;
+      octopus.update(time);
+      octopus.draw(creaturesCtx, isTwilightZone);
+
       const isMidnight = depthPercent >= 0.66;
+      if (isMidnight) {
+        anglerfish.update(pointerRef.current);
+      }
       anglerfish.draw(creaturesCtx, time, isMidnight);
+
+      whale.update(time, depthPercent);
+      whale.draw(creaturesCtx, time, isMidnight);
+
+      const isAbyss = depthPercent >= 0.8;
+      worms.forEach(worm => {
+        worm.update(time);
+        worm.draw(creaturesCtx, isAbyss);
+      });
+
+      // Hydrothermal Vents & Plumes
+      if (isAbyss) {
+          // Update & Draw Vents
+          vents.forEach(v => {
+              creaturesCtx.fillStyle = '#111';
+              // Voxel-style rock column
+              creaturesCtx.fillRect(v.x - 20, v.y - 60, 40, 60);
+              creaturesCtx.fillRect(v.x - 10, v.y - 80, 20, 20);
+              
+              // Emit particles
+              if (Math.random() < 0.4) {
+                  ventParticles.push({
+                      x: v.x + (Math.random() - 0.5) * 10,
+                      y: v.y - 80,
+                      vx: (Math.random() - 0.5) * 1,
+                      vy: -1,
+                      radius: Math.random() * 5 + 2,
+                      life: 1.0,
+                      age: 0
+                  });
+              }
+          });
+
+          // Update & Draw Plumes
+          creaturesCtx.save();
+          for (let i = ventParticles.length - 1; i >= 0; i--) {
+              const p = ventParticles[i];
+              p.age += 0.01;
+              
+              // Buoyancy: upward force inversely proportional to age
+              const buoyancy = Math.max(0.5 / (p.age + 0.1), 0.1);
+              p.vy -= buoyancy * 0.1;
+              p.vx += Math.sin(time * 0.1 + p.y * 0.05) * 0.1; // Shimmer drift
+              
+              p.x += p.vx;
+              p.y += p.vy;
+              p.life -= 0.005;
+
+              if (p.life <= 0 || p.y < 0) {
+                  ventParticles.splice(i, 1);
+                  continue;
+              }
+
+              const alpha = p.life * 0.4;
+              const size = p.radius * (1 + p.age * 5);
+              
+              const pGrad = creaturesCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+              pGrad.addColorStop(0, `rgba(60, 60, 70, ${alpha})`);
+              pGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+              
+              creaturesCtx.fillStyle = pGrad;
+              creaturesCtx.beginPath();
+              creaturesCtx.arc(p.x, p.y, size, 0, Math.PI * 2);
+              creaturesCtx.fill();
+          }
+          creaturesCtx.restore();
+      }
 
       // 3. ATMOSPHERE
       atmosphereCtx.clearRect(0, 0, w, h);
@@ -344,13 +590,47 @@ export default function CanvasEngine() {
       }
 
       // Marine snow fades in as you go deeper. Surface is clean and minimal.
-      let snowOpacityMult = 0.0;
-      if (depthPercent > 0.05) {
-          snowOpacityMult = Math.min((depthPercent - 0.05) / 0.1, 1.0);
+      // Marine Snow System (Prompts 1-5)
+      const depth = state.depth;
+      let snowDensityMult = 0;
+      // Prompt 3: Fade in gradually between 200m and 600m
+      if (depth > 200) {
+          snowDensityMult = Math.min((depth - 200) / 400, 1.0);
       }
-      if (depthPercent >= 0.66) snowOpacityMult = 1.5;
+      // Intensify at Midnight and below
+      if (depthPercent >= 0.66) snowDensityMult *= 1.5;
 
       const extraSpeed = scrollVelocity * 0.08;
+
+      if (snowDensityMult > 0) {
+          atmosphereCtx.save();
+          // Prompt 2: Soft luminous halo
+          atmosphereCtx.shadowBlur = 4;
+          atmosphereCtx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+          
+          const activeParticles = Math.floor(particles.length * Math.min(snowDensityMult, 1.0));
+
+          for (let i = 0; i < activeParticles; i++) {
+            const p = particles[i];
+            // Prompt 5: Gentle horizontal drift
+            p.x += p.drift + Math.sin(time * 0.01 + p.y * 0.01) * 0.2;
+            p.y += p.speedY + extraSpeed;
+
+            if (p.y > h) p.y = 0;
+            if (p.x > w) p.x = 0;
+            if (p.x < 0) p.x = w;
+
+            // Prompt 4: Unique opacity
+            atmosphereCtx.globalAlpha = p.opacity * Math.min(snowDensityMult, 1.0);
+            
+            // Prompt 1: High-fidelity circles
+            atmosphereCtx.beginPath();
+            atmosphereCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            atmosphereCtx.fillStyle = 'white';
+            atmosphereCtx.fill();
+          }
+          atmosphereCtx.restore();
+      }
 
       if (drawGodRays && depthPercent < 0.6) {
         const rayFade = Math.max(1 - (depthPercent / 0.4), 0);
@@ -380,6 +660,36 @@ export default function CanvasEngine() {
             atmosphereCtx.fill();
           });
         }
+      }
+
+
+
+      // Ink Cloud Simulation (Brownian motion & decay)
+      if (inkParticles.length > 0) {
+        atmosphereCtx.save();
+        for (let i = inkParticles.length - 1; i >= 0; i--) {
+          const p = inkParticles[i];
+          
+          // Brownian motion + expansion
+          p.x += p.vx + (Math.random() - 0.5) * 2;
+          p.y += p.vy + (Math.random() - 0.5) * 2;
+          p.vx *= 0.95;
+          p.vy *= 0.95;
+          p.radius += 0.5;
+          p.life -= 0.008; // Roughly 3 seconds at 60fps
+
+          if (p.life <= 0) {
+            inkParticles.splice(i, 1);
+            continue;
+          }
+
+          atmosphereCtx.globalAlpha = p.life * 0.7;
+          atmosphereCtx.fillStyle = '#050510'; // Deep dark ink
+          atmosphereCtx.beginPath();
+          atmosphereCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          atmosphereCtx.fill();
+        }
+        atmosphereCtx.restore();
       }
 
       time += 1;

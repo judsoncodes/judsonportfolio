@@ -62,7 +62,7 @@ export class Boid {
     this.maxForce = 0.05;
   }
 
-  update(hash: SpatialHash, cursor: Vector2, foods: Food[], width: number, height: number, depthPercent: number) {
+  update(hash: SpatialHash, cursor: Vector2, foods: Food[], width: number, height: number, depthPercent: number, baitBallTarget: Vector2 | null = null) {
     if (depthPercent > 0.6) return; // Inactive below 60%
 
     // Max neighbor radius is 50
@@ -112,9 +112,17 @@ export class Boid {
       overridesFlocking = true;
     }
 
+    // Bait Ball behavior (Defensive Sphere)
+    let ballForce = { x: 0, y: 0 };
+    if (baitBallTarget) {
+        ballForce = this.seek(baitBallTarget);
+        ballForce.x *= 4.0; ballForce.y *= 4.0;
+        overridesFlocking = true;
+    }
+
     if (overridesFlocking) {
-      this.acc.x += sep.x * 2 + foodForce.x + fearForce.x;
-      this.acc.y += sep.y * 2 + foodForce.y + fearForce.y;
+      this.acc.x += sep.x * 2 + foodForce.x + fearForce.x + ballForce.x;
+      this.acc.y += sep.y * 2 + foodForce.y + fearForce.y + ballForce.y;
     } else {
       this.acc.x += sep.x + ali.x + coh.x;
       this.acc.y += sep.y + ali.y + coh.y;

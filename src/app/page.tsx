@@ -2,7 +2,6 @@
 
 import CanvasEngine from "@/components/canvas/CanvasEngine";
 import SurfaceCanvas from "@/components/canvas/SurfaceCanvas";
-import MarineSnowWebGL from "@/components/canvas/MarineSnowWebGL";
 import BubbleShader from "@/components/canvas/BubbleShader";
 import PressureVignette from "@/components/ui/PressureVignette";
 import DepthGauge from "@/components/ui/DepthGauge";
@@ -91,7 +90,6 @@ export default function Home() {
     <main className="relative w-full text-white overflow-hidden font-sans">
       <SurfaceCanvas />
       <CanvasEngine />
-      <MarineSnowWebGL />
       <BubbleShader />
       <PressureVignette />
       <DepthGauge />
