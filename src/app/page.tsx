@@ -1,4 +1,5 @@
 'use client';
+// The Abyss Portfolio - High-Fidelity Expedition
 
 import CanvasEngine from "@/components/canvas/CanvasEngine";
 import SurfaceCanvas from "@/components/canvas/SurfaceCanvas";
