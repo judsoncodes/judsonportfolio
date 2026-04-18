@@ -120,6 +120,16 @@ interface Vent {
   y: number;
 }
 
+interface SplashParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  life: number;
+  isSplashback: boolean;
+}
+
 export default function CanvasEngine() {
   const creaturesRef = useRef<HTMLCanvasElement>(null);
   const atmosphereRef = useRef<HTMLCanvasElement>(null);
@@ -201,7 +211,7 @@ export default function CanvasEngine() {
     const ripples: Ripple[] = [];
     
     const jellyfish = new Jellyfish(window.innerWidth * 0.8, window.innerHeight + 100);
-    const seaTurtle = new SeaTurtle(window.innerWidth * 0.5, window.innerHeight * 0.5);
+    const seaTurtle = new SeaTurtle(window.innerWidth, window.innerHeight);
     const anglerfish = new Anglerfish(window.innerWidth * 0.3, window.innerHeight * 0.7);
     const worms = Array.from({ length: 15 }).map((_, i) => {
       return new Osedax(window.innerWidth * (0.05 + i * 0.07) + (Math.random() - 0.5) * 50, window.innerHeight + 10);
@@ -209,6 +219,7 @@ export default function CanvasEngine() {
     const whale = new Whale();
     const octopus = new Octopus(window.innerWidth * 0.7, window.innerHeight * 0.4);
     const inkParticles: InkParticle[] = [];
+    const splashParticles: SplashParticle[] = [];
     const vents: Vent[] = [
         { x: window.innerWidth * 0.2, y: window.innerHeight },
         { x: window.innerWidth * 0.5, y: window.innerHeight },
@@ -369,8 +380,23 @@ export default function CanvasEngine() {
           
           if (f.vy > 0 && f.y >= surfaceY) {
               // Hits the water
-              if (audioEngine && Math.random() < 0.5) audioEngine.playBubble(); // Optional subtle sound
+              if (audioEngine && Math.random() < 0.5) audioEngine.playBubble();
               ripples.push({ x: f.x, y: surfaceY, radius: 2, opacity: 1.0 });
+              
+              // Photorealistic Splash Ejection
+              const count = isDegraded ? 10 : 25;
+              for (let j = 0; j < count; j++) {
+                  splashParticles.push({
+                      x: f.x,
+                      y: surfaceY,
+                      vx: (Math.random() - 0.5) * 4.0 + f.vx * 0.5,
+                      vy: -(Math.random() * 4.0 + 2.0),
+                      radius: Math.random() * 2.5 + 1.0,
+                      life: 1.0,
+                      isSplashback: false
+                  });
+              }
+              
               jumpingFishes.splice(i, 1);
           } else {
               // Draw minimalistic elegant fish shape
@@ -390,6 +416,39 @@ export default function CanvasEngine() {
               creaturesCtx.restore();
           }
       }
+      // Update & Draw Splash Particles
+      for (let i = splashParticles.length - 1; i >= 0; i--) {
+          const p = splashParticles[i];
+          p.vx *= 0.98; // horizontal drag
+          p.vy += 0.18; // gravity
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 0.012;
+
+          // Secondary Impact (Splashback)
+          if (!p.isSplashback && p.vy > 0 && p.y >= surfaceY) {
+              p.isSplashback = true;
+              p.vy *= -0.3; // bounce slightly
+              p.vx *= 0.5;
+              // Spawn tiny splashback droplets
+              if (!isDegraded && Math.random() > 0.5) {
+                  splashParticles.push({
+                      x: p.x, y: surfaceY, vx: (Math.random()-0.5)*2, vy: -Math.random()*2,
+                      radius: p.radius * 0.5, life: 0.5, isSplashback: true
+                  });
+              }
+          }
+
+          if (p.life <= 0 || p.y > surfaceY + 20) {
+              splashParticles.splice(i, 1);
+          } else {
+              creaturesCtx.beginPath();
+              creaturesCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+              creaturesCtx.fillStyle = `rgba(180, 245, 255, ${p.life * 0.8})`;
+              creaturesCtx.fill();
+          }
+      }
+
 
       foodsRef.current.forEach((food) => {
         food.y += 0.5;
@@ -471,6 +530,15 @@ export default function CanvasEngine() {
 
       const isTwilight = depthPercent >= 0.33 && depthPercent < 0.8;
       if (isTwilight) {
+        // Collect UI obstacles for SDF repulsion
+        const obstacleElements = document.querySelectorAll('.turtle-obstacle');
+        const obstacles = Array.from(obstacleElements).map(el => {
+            const rect = el.getBoundingClientRect();
+            return { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+        });
+
+        seaTurtle.update(obstacles);
+        
         // If degraded, update physics with active=false (skip verlet) but still draw the static ones
         jellyfish.update(pointerRef.current, updateTentacles);
         

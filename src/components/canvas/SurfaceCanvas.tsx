@@ -16,6 +16,7 @@ const fragmentShaderSource = `
   uniform float u_time;
   uniform float u_scroll;
   uniform float u_depth_ratio; // 0.0 at surface, 1.0 at abyss
+  uniform float u_velocity;    // Normalized scroll velocity
 
   // 2D Simplex Noise
   vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
@@ -47,17 +48,25 @@ const fragmentShaderSource = `
 
   // Modified Gerstner-like function for 2D profile
   float gerstner(float x, float freq, float speed, float amp, float time) {
-      float steepness = 0.4; // Controlled, elegant, no aggressive peaks
+      float steepness = 0.4;
       float phase = x * freq - time * speed;
       return amp * sin(phase + steepness * cos(phase));
   }
 
   // Get total wave displacement
   float getWaveHeight(float x, float t) {
-      float w1 = gerstner(x, 3.5, 1.2, 0.018, t);
-      float w2 = gerstner(x, 6.0, 1.8, 0.008, t);
-      float w3 = gerstner(x, 10.0, 2.5, 0.004, t);
-      float noiseVariation = snoise(vec2(x * 1.5 - t * 0.5, t * 0.2)) * 0.006;
+      // Attenuate waves as we go deeper (0.05 = 200m / 4000m)
+      // Surface flattens and becomes glassy by 200m
+      float depthMod = clamp(1.0 - (u_depth_ratio / 0.05), 0.0, 1.0);
+      
+      // Amplitude responds to scroll velocity (surge effect)
+      float velocityMod = 1.0 + abs(u_velocity) * 5.0;
+      float finalAmp = depthMod * velocityMod;
+
+      float w1 = gerstner(x, 3.5, 1.2, 0.018 * finalAmp, t);
+      float w2 = gerstner(x, 6.0, 1.8, 0.008 * finalAmp, t);
+      float w3 = gerstner(x, 10.0, 2.5, 0.004 * finalAmp, t);
+      float noiseVariation = snoise(vec2(x * 1.5 - t * 0.5, t * 0.2)) * 0.006 * depthMod;
       return w1 + w2 + w3 + noiseVariation;
   }
 
@@ -275,6 +284,7 @@ export default function SurfaceCanvas() {
     const uTime = gl.getUniformLocation(program, "u_time");
     const uScroll = gl.getUniformLocation(program, "u_scroll");
     const uDepthRatio = gl.getUniformLocation(program, "u_depth_ratio");
+    const uVelocity = gl.getUniformLocation(program, "u_velocity");
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -289,6 +299,8 @@ export default function SurfaceCanvas() {
 
     let animationFrameId: number;
     const startTime = performance.now();
+    let prevDepth = useStore.getState().depth;
+    let smoothedVelocity = 0;
 
     const render = (time: number) => {
       const elapsed = (time - startTime) / 1000.0;
@@ -297,12 +309,18 @@ export default function SurfaceCanvas() {
       const currentDepth = useStore.getState().depth;
       const depthRatio = Math.min(currentDepth / maxDepth, 1);
       
+      // Calculate velocity
+      const velocity = (currentDepth - prevDepth) * 0.1;
+      smoothedVelocity += (velocity - smoothedVelocity) * 0.1;
+      prevDepth = currentDepth;
+
       // Matches original parallax timing
       const scrollOffset = currentDepth * 0.8;
 
       gl.uniform1f(uTime, elapsed);
       gl.uniform1f(uScroll, scrollOffset);
       gl.uniform1f(uDepthRatio, depthRatio);
+      gl.uniform1f(uVelocity, smoothedVelocity);
       
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 

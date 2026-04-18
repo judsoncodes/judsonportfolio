@@ -91,6 +91,50 @@ class WebAudioEngine {
     osc.start();
     osc.stop(this.ctx.currentTime + 4);
   }
+
+  playSonarPing() {
+    if (this.muted || !this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.3);
+    
+    gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.4);
+  }
+
+  playKeystroke() {
+    if (this.muted || !this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(150 + Math.random() * 50, this.ctx.currentTime);
+    
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(1000, this.ctx.currentTime);
+    
+    gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.05);
+  }
 }
+
+
 
 export const audioEngine = typeof window !== 'undefined' ? new WebAudioEngine() : null;

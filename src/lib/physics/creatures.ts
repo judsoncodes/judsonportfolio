@@ -149,44 +149,103 @@ export class Jellyfish {
 }
 
 export class SeaTurtle {
-  time: number = 0;
-  baseX: number;
-  baseY: number;
+  x: number = 0;
+  y: number = 0;
+  progress: number = Math.random();
+  points: Vector2[];
+  angle: number = 0;
 
-  constructor(x: number, y: number) {
-    this.baseX = x;
-    this.baseY = y;
+  constructor(w: number, h: number) {
+    // Strategic control points that weave through the sunlit/twilight interface
+    this.points = [
+      { x: -200, y: h * 0.2 },
+      { x: w * 0.3, y: h * 0.5 },
+      { x: w * 0.7, y: h * 0.3 },
+      { x: w + 200, y: h * 0.6 },
+      { x: w * 0.5, y: h * 0.8 },
+      { x: -200, y: h * 0.4 }
+    ];
+  }
+
+  interpolate(p0: number, p1: number, p2: number, p3: number, t: number) {
+    const v0 = (p2 - p0) * 0.5;
+    const v1 = (p3 - p1) * 0.5;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * p1 - 2 * p2 + v0 + v1) * t3 + (-3 * p1 + 3 * p2 - 2 * v0 - v1) * t2 + v0 * t + p1;
+  }
+
+  update(obstacles: { x: number, y: number, w: number, h: number }[]) {
+    this.progress += 0.0004;
+    if (this.progress > 1.0) this.progress = 0;
+
+    const pCount = this.points.length;
+    const i = Math.floor(this.progress * (pCount - 1));
+    const t = (this.progress * (pCount - 1)) % 1;
+
+    const p0 = this.points[Math.max(0, i - 1)];
+    const p1 = this.points[i];
+    const p2 = this.points[Math.min(pCount - 1, i + 1)];
+    const p3 = this.points[Math.min(pCount - 1, i + 2)];
+
+    const targetX = this.interpolate(p0.x, p1.x, p2.x, p3.x, t);
+    const targetY = this.interpolate(p0.y, p1.y, p2.y, p3.y, t);
+
+    // SDF Repulsion Force from UI Cards
+    let offsetX = 0;
+    let offsetY = 0;
+    obstacles.forEach(rect => {
+        // Simple SDF for box
+        const dx = Math.max(rect.x - targetX, 0, targetX - (rect.x + rect.w));
+        const dy = Math.max(rect.y - targetY, 0, targetY - (rect.y + rect.h));
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < 150) {
+            const force = (150 - dist) / 150;
+            const dirX = targetX - (rect.x + rect.w / 2);
+            const dirY = targetY - (rect.y + rect.h / 2);
+            const mag = Math.sqrt(dirX * dirX + dirY * dirY);
+            offsetX += (dirX / mag) * force * 100;
+            offsetY += (dirY / mag) * force * 100;
+        }
+    });
+
+    const nextX = targetX + offsetX;
+    const nextY = targetY + offsetY;
+    
+    this.angle = Math.atan2(nextY - this.y, nextX - this.x);
+    this.x = nextX;
+    this.y = nextY;
   }
 
   draw(ctx: CanvasRenderingContext2D, active: boolean) {
     if (!active) return;
-    this.time += 0.005;
-    const x = this.baseX + Math.sin(this.time) * 400;
-    const y = this.baseY + Math.sin(this.time * 2) * 150;
-    
-    const vx = Math.cos(this.time) * 400;
-    const vy = Math.cos(this.time * 2) * 300;
-    const angle = Math.atan2(vy, vx);
 
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
 
-    ctx.fillStyle = 'rgba(10, 60, 40, 0.8)';
+    ctx.fillStyle = 'rgba(15, 80, 50, 0.85)';
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = 'rgba(0, 255, 150, 0.2)';
     
+    // Shell
     ctx.beginPath();
-    ctx.ellipse(0, 0, 40, 30, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 45, 35, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // Flippers with swimming animation
+    const swim = Math.sin(Date.now() * 0.002) * 0.2;
     ctx.beginPath();
-    ctx.ellipse(20, -35, 20, 10, Math.PI / 4, 0, Math.PI * 2);
-    ctx.ellipse(20, 35, 20, 10, -Math.PI / 4, 0, Math.PI * 2);
-    ctx.ellipse(-25, -20, 15, 8, -Math.PI / 4, 0, Math.PI * 2);
-    ctx.ellipse(-25, 20, 15, 8, Math.PI / 4, 0, Math.PI * 2);
+    ctx.ellipse(25, -35, 25, 12, Math.PI / 4 + swim, 0, Math.PI * 2);
+    ctx.ellipse(25, 35, 25, 12, -Math.PI / 4 - swim, 0, Math.PI * 2);
+    ctx.ellipse(-30, -25, 18, 10, -Math.PI / 4 + swim, 0, Math.PI * 2);
+    ctx.ellipse(-30, 25, 18, 10, Math.PI / 4 - swim, 0, Math.PI * 2);
     ctx.fill();
 
+    // Head
     ctx.beginPath();
-    ctx.arc(45, 0, 12, 0, Math.PI * 2);
+    ctx.arc(55, 0, 14, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();

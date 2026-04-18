@@ -8,8 +8,21 @@ import DepthGauge from "@/components/ui/DepthGauge";
 import GlassCard from "@/components/ui/GlassCard";
 import SonarSkills from "@/components/ui/SonarSkills";
 import SoundToggle from "@/components/ui/SoundToggle";
+import MorseSkeleton from "@/components/ui/MorseSkeleton";
+import BathyscapheOverlay from "@/components/ui/BathyscapheOverlay";
+import ProjectCard from "@/components/ui/ProjectCard";
+import TypewriterTerminal from "@/components/ui/TypewriterTerminal";
+import OscilloscopeStat from "@/components/ui/OscilloscopeStat";
+import BathymetricScroll from "@/components/ui/BathymetricScroll";
+import ScrambleText from "@/components/ui/ScrambleText";
+import VortexTransition from "@/components/canvas/VortexTransition";
+import BiomeTransition from "@/components/ui/BiomeTransition";
+import PressureCrackText from "@/components/ui/PressureCrackText";
+import EyelidTransition from "@/components/ui/EyelidTransition";
+import CursorTrail from "@/components/canvas/CursorTrail";
 import { useStore } from "@/lib/store/useStore";
 import { motion, Variants } from "framer-motion";
+import { useState } from "react";
 import { ExternalLink, Mail, Phone, MapPin, Download } from 'lucide-react';
 
 const GithubIcon = ({ size = 24, className = "" }) => (
@@ -85,9 +98,27 @@ const popItemVariants: Variants = {
 export default function Home() {
   const introComplete = useStore((state) => state.introComplete);
   const setWaving = useStore((state) => state.setWaving);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [targetId, setTargetId] = useState<string | null>(null);
+
+  const handleNavigate = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault();
+    setTargetId(id);
+    setIsTransitioning(true);
+  };
+
+  const completeTransition = () => {
+    if (targetId) {
+        const el = document.getElementById(targetId);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+    setIsTransitioning(false);
+    setTargetId(null);
+  };
 
   return (
     <main className="relative w-full text-white overflow-hidden font-sans">
+      <VortexTransition isActive={isTransitioning} onComplete={completeTransition} />
       <SurfaceCanvas />
       <CanvasEngine />
       <BubbleShader />
@@ -95,6 +126,11 @@ export default function Home() {
       <DepthGauge />
       <SoundToggle />
       <EcoBadge />
+      <BathyscapheOverlay />
+      <CursorTrail />
+      <BathymetricScroll />
+      <BiomeTransition />
+      <EyelidTransition />
 
       {/* Content Container */}
       <div className="relative z-10 w-full max-w-6xl mx-auto px-6 lg:px-12 pb-48">
@@ -103,12 +139,21 @@ export default function Home() {
         <section className="min-h-screen flex flex-col justify-center pt-20">
           <motion.div 
             initial="hidden" 
-            animate={introComplete ? "visible" : "hidden"} 
+            animate={introComplete ? {
+                opacity: 1,
+                scale: [1, 1.02, 1],
+                filter: ["blur(0px)", "blur(1px)", "blur(0px)"],
+                transition: {
+                    scale: { repeat: Infinity, duration: 4, ease: "easeInOut" },
+                    filter: { repeat: Infinity, duration: 4, ease: "easeInOut" },
+                    opacity: { duration: 0.5 } // Keep initial reveal fast
+                }
+            } : "hidden"} 
             variants={heroContainerVariants}
           >
             <motion.div variants={popItemVariants} className="text-[#00e5ff] font-mono tracking-[0.3em] text-sm mb-4">0m // SUNLIT ZONE</motion.div>
             <motion.h1 variants={glitchTitleVariants} className="font-['var(--font-playfair)'] text-5xl sm:text-7xl md:text-8xl lg:text-9xl font-black mb-6 tracking-tight bg-gradient-to-br from-white to-[#00e5ff] bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-              Judson J
+              {introComplete ? <ScrambleText text="Judson J" delay={100} /> : "Judson J"}
             </motion.h1>
             <motion.h2 variants={popItemVariants} className="text-xl sm:text-2xl md:text-3xl lg:text-4xl text-white/90 mb-8 font-light">
               CS Engineer <span className="text-[#00e5ff]">·</span> ML <span className="text-[#00e5ff]">·</span> Full Stack Developer
@@ -118,7 +163,11 @@ export default function Home() {
             </motion.p>
             
             <motion.div variants={popItemVariants} className="flex flex-wrap gap-6">
-              <a href="#projects" className="px-8 py-4 bg-[#00e5ff] text-[#020810] font-bold rounded-full hover:bg-white hover:scale-105 transition-all shadow-[0_0_20px_rgba(0,229,255,0.5)]">
+              <a 
+                href="#projects" 
+                onClick={(e) => handleNavigate(e, "projects")}
+                className="px-8 py-4 bg-[#00e5ff] text-[#020810] font-bold rounded-full hover:bg-white hover:scale-105 transition-all shadow-[0_0_20px_rgba(0,229,255,0.5)]"
+              >
                 View Projects
               </a>
               <a href="/CV.pdf" className="px-8 py-4 bg-transparent border border-[#00e5ff] text-[#00e5ff] font-bold rounded-full hover:bg-[#00e5ff11] hover:scale-105 transition-all flex items-center gap-2">
@@ -126,38 +175,37 @@ export default function Home() {
               </a>
             </motion.div>
           </motion.div>
+          
+          {!introComplete && (
+            <div className="absolute inset-0 flex flex-col justify-center pointer-events-none">
+                <MorseSkeleton title="JUDSON" className="max-w-md" />
+            </div>
+          )}
         </section>
 
         {/* ABOUT & STATS */}
-        <section className="py-32">
+        <section className="relative py-32">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={heroContainerVariants}>
             <motion.div variants={popItemVariants} className="text-[#00e5ff] font-mono tracking-[0.3em] text-sm mb-12">400m // SUNLIT DESCENT</motion.div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <motion.div variants={popItemVariants}>
-                <GlassCard className="text-center h-full">
-                  <h3 className="text-4xl font-bold text-white mb-2">300+</h3>
-                  <p className="text-[#00e5ff] font-mono text-xs uppercase tracking-widest">LeetCode</p>
-                </GlassCard>
-              </motion.div>
-              <motion.div variants={popItemVariants}>
-                <GlassCard className="text-center h-full">
-                  <h3 className="text-4xl font-bold text-white mb-2">8.0</h3>
-                  <p className="text-[#00e5ff] font-mono text-xs uppercase tracking-widest">CGPA</p>
-                </GlassCard>
-              </motion.div>
-              <motion.div variants={popItemVariants}>
-                <GlassCard className="text-center h-full">
-                  <h3 className="text-4xl font-bold text-white mb-2">2</h3>
-                  <p className="text-[#00e5ff] font-mono text-xs uppercase tracking-widest">Core Projects</p>
-                </GlassCard>
-              </motion.div>
-              <motion.div variants={popItemVariants}>
-                <GlassCard className="text-center h-full">
-                  <h3 className="text-4xl font-bold text-white mb-2">4+</h3>
-                  <p className="text-[#00e5ff] font-mono text-xs uppercase tracking-widest">Certifications</p>
-                </GlassCard>
-              </motion.div>
-            </div>
+            
+            {introComplete ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <motion.div variants={popItemVariants}>
+                  <OscilloscopeStat value="300+" label="LeetCode" intensity={0.8} />
+                </motion.div>
+                <motion.div variants={popItemVariants}>
+                  <OscilloscopeStat value="8.0" label="CGPA" intensity={0.6} />
+                </motion.div>
+                <motion.div variants={popItemVariants}>
+                  <OscilloscopeStat value="2" label="Core Projects" intensity={0.4} />
+                </motion.div>
+                <motion.div variants={popItemVariants}>
+                  <OscilloscopeStat value="4+" label="Certifications" intensity={0.5} />
+                </motion.div>
+              </div>
+            ) : (
+                <MorseSkeleton title="LOGBOOK" className="max-w-xl" />
+            )}
           </motion.div>
         </section>
 
@@ -180,7 +228,7 @@ export default function Home() {
             
             <div className="grid md:grid-cols-2 gap-10">
               <motion.div variants={popItemVariants}>
-                <GlassCard className="h-full">
+                <ProjectCard className="h-full">
                   <div className="text-[#00e5ff] font-mono text-xs mb-4">07/2025 – 09/2025</div>
                   <h3 className="text-3xl font-bold mb-4 flex justify-between items-center">
                     SecureSight <a href="#" aria-label="View SecureSight Project" className="text-white/30 hover:text-white transition-colors focus:outline-none"><ExternalLink /></a>
@@ -193,11 +241,11 @@ export default function Home() {
                     <span className="px-3 py-1 rounded-full bg-[#00e5ff22] border border-[#00e5ff44] text-xs text-[#00e5ff]">Machine Learning</span>
                     <span className="px-3 py-1 rounded-full bg-[#00e5ff22] border border-[#00e5ff44] text-xs text-[#00e5ff]">Security</span>
                   </div>
-                </GlassCard>
+                </ProjectCard>
               </motion.div>
 
               <motion.div variants={popItemVariants}>
-                <GlassCard className="h-full">
+                <ProjectCard className="h-full">
                   <div className="text-[#00e5ff] font-mono text-xs mb-4">06/2025 – 09/2025</div>
                   <h3 className="text-3xl font-bold mb-4 flex justify-between items-center">
                     UrbanConnect <a href="#" aria-label="View UrbanConnect Project" className="text-white/30 hover:text-white transition-colors focus:outline-none"><ExternalLink /></a>
@@ -210,7 +258,7 @@ export default function Home() {
                     <span className="px-3 py-1 rounded-full bg-[#00e5ff22] border border-[#00e5ff44] text-xs text-[#00e5ff]">React.js</span>
                     <span className="px-3 py-1 rounded-full bg-[#00e5ff22] border border-[#00e5ff44] text-xs text-[#00e5ff]">Node.js</span>
                   </div>
-                </GlassCard>
+                </ProjectCard>
               </motion.div>
             </div>
           </motion.div>
@@ -291,7 +339,9 @@ export default function Home() {
         <section className="py-32">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={heroContainerVariants}>
             <motion.div variants={popItemVariants} className="text-[#ff6b35] font-mono tracking-[0.3em] text-sm mb-4">4000m // THE ABYSS</motion.div>
-            <motion.h2 variants={glitchTitleVariants} className="font-['var(--font-playfair)'] text-5xl font-black mb-12">Establish Comms</motion.h2>
+            <motion.h2 variants={glitchTitleVariants} className="font-['var(--font-playfair)'] text-5xl font-black mb-12">
+              <PressureCrackText text="Establish Comms" />
+            </motion.h2>
             
             <motion.div variants={popItemVariants}>
               <GlassCard className="p-12">
@@ -315,19 +365,19 @@ export default function Home() {
                       <div className="w-10 h-10 rounded-full bg-[#00e5ff11] flex items-center justify-center group-hover:bg-[#00e5ff22]">
                         <Mail size={18} className="text-[#00e5ff]" />
                       </div>
-                      jjudsoncse2024@citchennai.net
+                      <TypewriterTerminal text="jjudsoncse2024@citchennai.net" delay={500} />
                     </a>
                     <a href="tel:+918106502995" className="flex items-center gap-4 text-white/80 hover:text-[#00e5ff] transition-colors group">
                       <div className="w-10 h-10 rounded-full bg-[#00e5ff11] flex items-center justify-center group-hover:bg-[#00e5ff22]">
                         <Phone size={18} className="text-[#00e5ff]" />
                       </div>
-                      +91 81065 02995
+                      <TypewriterTerminal text="+91 81065 02995" delay={1500} />
                     </a>
                     <div className="flex items-center gap-4 text-white/80 group">
                       <div className="w-10 h-10 rounded-full bg-[#00e5ff11] flex items-center justify-center">
                         <MapPin size={18} className="text-[#00e5ff]" />
                       </div>
-                      Chennai, India
+                      <TypewriterTerminal text="Chennai, India" delay={2500} />
                     </div>
                   </div>
                 </div>
