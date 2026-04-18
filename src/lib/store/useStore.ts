@@ -5,9 +5,11 @@ interface AbyssState {
   depthPercent: number; // 0 to 1
   ecoMode: boolean;
   introComplete: boolean;
+  isWaving: boolean;
   setDepth: (depth: number) => void;
   setEcoMode: (ecoMode: boolean) => void;
   setIntroComplete: (val: boolean) => void;
+  setWaving: (val: boolean) => void;
 }
 
 const MAX_DEPTH = 4000;
@@ -17,10 +19,13 @@ export const useStore = create<AbyssState>((set) => ({
   depthPercent: 0,
   ecoMode: false,
   introComplete: false,
+  isWaving: false,
   setDepth: (depth) => set({ 
     depth, 
     depthPercent: Math.min(Math.max(depth / MAX_DEPTH, 0), 1)
   }),
   setEcoMode: (ecoMode) => set({ ecoMode }),
   setIntroComplete: (introComplete) => set({ introComplete }),
+  setWaving: (isWaving) => set({ isWaving }),
 }))
+

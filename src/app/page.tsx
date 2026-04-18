@@ -82,6 +82,7 @@ const popItemVariants = {
 
 export default function Home() {
   const introComplete = useStore((state) => state.introComplete);
+  const setWaving = useStore((state) => state.setWaving);
 
   return (
     <main className="relative w-full text-white overflow-hidden font-sans">
@@ -102,13 +103,13 @@ export default function Home() {
             variants={heroContainerVariants}
           >
             <motion.div variants={popItemVariants} className="text-[#00e5ff] font-mono tracking-[0.3em] text-sm mb-4">0m // SUNLIT ZONE</motion.div>
-            <motion.h1 variants={glitchTitleVariants} className="font-['var(--font-playfair)'] text-7xl md:text-9xl font-black mb-6 tracking-tight bg-gradient-to-br from-white to-[#00e5ff] bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+            <motion.h1 variants={glitchTitleVariants} className="font-['var(--font-playfair)'] text-5xl sm:text-7xl md:text-8xl lg:text-9xl font-black mb-6 tracking-tight bg-gradient-to-br from-white to-[#00e5ff] bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(0,229,255,0.3)]">
               Judson J
             </motion.h1>
-            <motion.h2 variants={popItemVariants} className="text-2xl md:text-3xl text-white/90 mb-8 font-light">
+            <motion.h2 variants={popItemVariants} className="text-xl sm:text-2xl md:text-3xl lg:text-4xl text-white/90 mb-8 font-light">
               CS Engineer <span className="text-[#00e5ff]">·</span> ML <span className="text-[#00e5ff]">·</span> Full Stack Developer
             </motion.h2>
-            <motion.p variants={popItemVariants} className="max-w-2xl text-lg text-white/70 mb-12 leading-relaxed">
+            <motion.p variants={popItemVariants} className="max-w-2xl text-base sm:text-lg lg:text-xl text-white/70 mb-12 leading-relaxed">
               Motivated problem-solver passionate about ML, data science, and building real-world systems. 300+ LeetCode problems solved. Building from Chennai.
             </motion.p>
             
@@ -327,6 +328,16 @@ export default function Home() {
                   </div>
                 </div>
               </GlassCard>
+            </motion.div>
+            
+            <motion.div variants={popItemVariants} className="mt-20 flex justify-center">
+              <button
+                onClick={() => setWaving(true)}
+                className="relative group px-12 py-5 bg-[#020810] border-2 border-[#00e5ff] text-[#00e5ff] font-bold rounded-full uppercase tracking-[0.2em] overflow-hidden transition-all hover:text-[#020810] hover:scale-105 shadow-[0_0_20px_rgba(0,229,255,0.2)] hover:shadow-[0_0_40px_rgba(0,229,255,0.6)] cursor-none md:cursor-pointer"
+              >
+                <span className="relative z-10 font-sans tracking-widest">Resurface to Top</span>
+                <div className="absolute inset-0 h-full w-full bg-[#00e5ff] translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out z-0"></div>
+              </button>
             </motion.div>
           </motion.div>
         </section>
